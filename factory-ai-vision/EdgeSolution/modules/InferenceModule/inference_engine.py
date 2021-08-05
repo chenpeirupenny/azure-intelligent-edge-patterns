@@ -38,27 +38,24 @@ class State:
             self._mediaStreamDescriptor = mediaStreamDescriptor
 
             # Get how data will be transferred
-            if (
-                self._mediaStreamDescriptor.WhichOneof(
-                    "data_transfer_properties")
-                is None
-            ):
+            if (self._mediaStreamDescriptor.WhichOneof(
+                    "data_transfer_properties") is None):
                 self._contentTransferType = TransferType.BYTES
             elif self._mediaStreamDescriptor.HasField(
-                "shared_memory_buffer_transfer_properties"
-            ):
+                    "shared_memory_buffer_transfer_properties"):
                 self._contentTransferType = TransferType.REFERENCE
             elif self._mediaStreamDescriptor.HasField(
-                "shared_memory_segments_transfer_properties"
-            ):
+                    "shared_memory_segments_transfer_properties"):
                 self._contentTransferType = TransferType.HANDLE
 
             # Setup if shared mem used
             if self._contentTransferType == TransferType.REFERENCE:
                 # Create shared memory accessor specific to the client
                 self._sharedMemoryManager = SharedMemoryManager(
-                    name=self._mediaStreamDescriptor.shared_memory_buffer_transfer_properties.handle_name,
-                    size=self._mediaStreamDescriptor.shared_memory_buffer_transfer_properties.length_bytes,
+                    name=self._mediaStreamDescriptor.
+                    shared_memory_buffer_transfer_properties.handle_name,
+                    size=self._mediaStreamDescriptor.
+                    shared_memory_buffer_transfer_properties.length_bytes,
                 )
             else:
                 self._sharedMemoryManager = None
@@ -75,12 +72,17 @@ class InferenceEngine(extension_pb2_grpc.MediaGraphExtensionServicer):
         # self._tYoloV3 = model
         self.stream_manager = stream_manager
         self.ovms = True
+        self.stub = None
 
     # Debug method for dumping received images with analysis results
 
-    def CreateDebugOutput(
-        self, requestSeqNum, cvImage, boxes, scores, indices, confidenceThreshold=0.1
-    ):
+    def CreateDebugOutput(self,
+                          requestSeqNum,
+                          cvImage,
+                          boxes,
+                          scores,
+                          indices,
+                          confidenceThreshold=0.1):
         try:
             marked = False
 
@@ -113,12 +115,11 @@ class InferenceEngine(extension_pb2_grpc.MediaGraphExtensionServicer):
             # Set output file name
             if marked:
                 outputFileName = os.path.join(
-                    DEBUG_OUTPUT_FOLDER, str(requestSeqNum) + "_marked.jpg"
-                )
+                    DEBUG_OUTPUT_FOLDER,
+                    str(requestSeqNum) + "_marked.jpg")
             else:
-                outputFileName = os.path.join(
-                    DEBUG_OUTPUT_FOLDER, str(requestSeqNum) + ".jpg"
-                )
+                outputFileName = os.path.join(DEBUG_OUTPUT_FOLDER,
+                                              str(requestSeqNum) + ".jpg")
 
             # output with bounding boxes
             cv2.imwrite(outputFileName, cvImage)
@@ -126,9 +127,10 @@ class InferenceEngine(extension_pb2_grpc.MediaGraphExtensionServicer):
             PrintGetExceptionDetails()
             raise
 
-    def GetMediaStreamMessageResponse(
-        self, predictions, imgShape, confidenceThreshold=0.1
-    ):
+    def GetMediaStreamMessageResponse(self,
+                                      predictions,
+                                      imgShape,
+                                      confidenceThreshold=0.1):
         try:
             msg = extension_pb2.MediaStreamMessage()
 
@@ -144,16 +146,14 @@ class InferenceEngine(extension_pb2_grpc.MediaGraphExtensionServicer):
                     inference.entity.CopyFrom(
                         inferencing_pb2.Entity(
                             tag=inferencing_pb2.Tag(
-                                value=objectLabel, confidence=confidenceScore
-                            ),
+                                value=objectLabel, confidence=confidenceScore),
                             box=inferencing_pb2.Rectangle(
                                 l=prediction["boundingBox"]["left"],
                                 t=prediction["boundingBox"]["top"],
                                 w=prediction["boundingBox"]["width"],
                                 h=prediction["boundingBox"]["height"],
                             ),
-                        )
-                    )
+                        ))
             return msg
         except:
             PrintGetExceptionDetails()
@@ -172,55 +172,45 @@ class InferenceEngine(extension_pb2_grpc.MediaGraphExtensionServicer):
 
                 # Get memory reference to (in readonly mode) data sent over shared memory
                 rawBytes = clientState._sharedMemoryManager.ReadBytes(
-                    addressOffset, lengthBytes
-                )
+                    addressOffset, lengthBytes)
 
             # Get encoding details of the media sent by client
-            encoding = (
-                clientState._mediaStreamDescriptor.media_descriptor.video_frame_sample_format.encoding
-            )
+            encoding = (clientState._mediaStreamDescriptor.media_descriptor.
+                        video_frame_sample_format.encoding)
 
             # Handle JPG, PNG, BMP content
             cvImage = None
-            if (
-                encoding
-                == clientState._mediaStreamDescriptor.media_descriptor.video_frame_sample_format.Encoding.JPG
-                or encoding
-                == clientState._mediaStreamDescriptor.media_descriptor.video_frame_sample_format.Encoding.PNG
-                or encoding
-                == clientState._mediaStreamDescriptor.media_descriptor.video_frame_sample_format.Encoding.BMP
-            ):
+            if (encoding == clientState._mediaStreamDescriptor.
+                    media_descriptor.video_frame_sample_format.Encoding.JPG
+                    or encoding == clientState._mediaStreamDescriptor.
+                    media_descriptor.video_frame_sample_format.Encoding.PNG
+                    or encoding == clientState._mediaStreamDescriptor.
+                    media_descriptor.video_frame_sample_format.Encoding.BMP):
 
                 # np.frombuffer is zero copy command
-                cvImage = cv2.imdecode(np.frombuffer(
-                    rawBytes, dtype=np.uint8), -1)
+                cvImage = cv2.imdecode(np.frombuffer(rawBytes, dtype=np.uint8),
+                                       -1)
 
             # Handle RAW content (Just place holder for the user to handle each variation...)
-            elif (
-                encoding
-                == clientState._mediaStreamDescriptor.media_descriptor.video_frame_sample_format.Encoding.RAW
-            ):
+            elif (encoding == clientState._mediaStreamDescriptor.
+                  media_descriptor.video_frame_sample_format.Encoding.RAW):
                 pixelFormat = (
-                    clientState._mediaStreamDescriptor.media_descriptor.video_frame_sample_format.pixel_format
-                )
+                    clientState._mediaStreamDescriptor.media_descriptor.
+                    video_frame_sample_format.pixel_format)
                 if pixelFormat == media_pb2.VideoFrameSampleFormat.PixelFormat.RGBA:
                     cvImage = cv2.cvtColor(
-                        np.frombuffer(
-                            rawBytes, dtype=np.uint8), cv2.COLOR_RGBA2RGB
-                    )
+                        np.frombuffer(rawBytes, dtype=np.uint8),
+                        cv2.COLOR_RGBA2RGB)
                 elif pixelFormat == media_pb2.VideoFrameSampleFormat.PixelFormat.BGR24:
                     # logging.info('&&&&&&&&&& BGR mode &&&&&&&&&&')
                     cvImage = np.frombuffer(rawBytes, dtype=np.uint8).reshape(
-                        540, 960, 3
-                    )
+                        540, 960, 3)
                 elif pixelFormat == media_pb2.VideoFrameSampleFormat.PixelFormat.RGB24:
                     # logging.info('&&&&&&&&&& RGB mode &&&&&&&&&&')
                     cvImage = np.frombuffer(rawBytes, dtype=np.uint8).reshape(
-                        540, 960, 3
-                    )
-                elif (
-                    pixelFormat == media_pb2.VideoFrameSampleFormat.PixelFormat.YUV420P
-                ):
+                        540, 960, 3)
+                elif (pixelFormat ==
+                      media_pb2.VideoFrameSampleFormat.PixelFormat.YUV420P):
                     cvImage = None
 
             return cvImage
@@ -247,19 +237,13 @@ class InferenceEngine(extension_pb2_grpc.MediaGraphExtensionServicer):
         clientState = State(mediaStreamMessageRequest.media_stream_descriptor)
 
         logging.info(
-            "Connection created with peer {}.\nMediaStreamDescriptor:\n{}".format(
-                context.peer(), clientState._mediaStreamDescriptor
-            )
-        )
-        instance_id = (
-            clientState._mediaStreamDescriptor.graph_identifier.graph_instance_name
-        )
+            "Connection created with peer {}.\nMediaStreamDescriptor:\n{}".
+            format(context.peer(), clientState._mediaStreamDescriptor))
+        instance_id = (clientState._mediaStreamDescriptor.graph_identifier.
+                       graph_instance_name)
         stream = self.stream_manager.get_stream_by_id(instance_id)
-        logging.debug(
-            "[Received] SeqNum: {:07d} | AckNum: {}".format(
-                requestSeqNum, requestAckSeqNum
-            )
-        )
+        logging.debug("[Received] SeqNum: {:07d} | AckNum: {}".format(
+            requestSeqNum, requestAckSeqNum))
 
         # First message response ...
         mediaStreamMessage = extension_pb2.MediaStreamMessage(
@@ -267,9 +251,8 @@ class InferenceEngine(extension_pb2_grpc.MediaGraphExtensionServicer):
             ack_sequence_number=requestSeqNum,
             media_stream_descriptor=extension_pb2.MediaStreamDescriptor(
                 media_descriptor=media_pb2.MediaDescriptor(
-                    timescale=clientState._mediaStreamDescriptor.media_descriptor.timescale
-                )
-            ),
+                    timescale=clientState._mediaStreamDescriptor.
+                    media_descriptor.timescale)),
         )
         yield mediaStreamMessage
 
@@ -286,8 +269,7 @@ class InferenceEngine(extension_pb2_grpc.MediaGraphExtensionServicer):
             s1 = time.time()
             # Get media content bytes. (bytes sent over shared memory buffer, segment or inline to message)
             cvImage = self.GetCvImageFromRawBytes(
-                clientState, mediaStreamMessageRequest.media_sample
-            )
+                clientState, mediaStreamMessageRequest.media_sample)
             e1 = time.time() - s1
             logging.info("GetCvImageFromRawBytes time: {}".format(e1))
 
@@ -314,18 +296,19 @@ class InferenceEngine(extension_pb2_grpc.MediaGraphExtensionServicer):
             # out = self._tYoloV3.Score(cvImage)
             # logging.info(out)
             # predictions = self._tYoloV3.Score(cvImage, instance_id)
+            predictions = None
             if not stream:
                 stream = self.stream_manager.get_stream_by_id(instance_id)
                 predictions = []
                 print("[INFO] Stream not ready yet", flush=True)
-            elif not stub:
+            elif self.stub is None:
                 channel = grpc.insecure_channel('ovms-server:9010')
-                stub = prediction_service_pb2_grpc.PredictionServiceStub(
+                self.stub = prediction_service_pb2_grpc.PredictionServiceStub(
                     channel)
             else:
                 try:
                     if self.ovms:
-                        stream.predict_grpc(cvImage, stub)
+                        stream.predict_grpc(cvImage, self.stub)
                         predictions = stream.last_prediction
                     else:
                         # s2 = time.time()
@@ -340,7 +323,8 @@ class InferenceEngine(extension_pb2_grpc.MediaGraphExtensionServicer):
                         #    '***** std. Inference time *****: {0}'.format(np.std(total_time)))
                 except:
                     print("[ERROR] Unexpected error:",
-                          sys.exc_info(), flush=True)
+                          sys.exc_info(),
+                          flush=True)
                     predictions = []
             # stream_manager.update(cvImage, instance_id)
             # logging.debug(
@@ -354,14 +338,12 @@ class InferenceEngine(extension_pb2_grpc.MediaGraphExtensionServicer):
             if context.is_active():
                 # return inference result as MediaStreamMessage
                 mediaStreamMessage = self.GetMediaStreamMessageResponse(
-                    predictions, cvImage.shape
-                )
+                    predictions, cvImage.shape)
 
                 mediaStreamMessage.sequence_number = responseSeqNum
                 mediaStreamMessage.ack_sequence_number = requestSeqNum
                 mediaStreamMessage.media_sample.timestamp = (
-                    mediaStreamMessageRequest.media_sample.timestamp
-                )
+                    mediaStreamMessageRequest.media_sample.timestamp)
 
                 # yield response
                 ss = time.time()
